@@ -6,7 +6,6 @@ use Closure;
 use Illuminate\Container\Container;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\Request;
-use Illuminate\Routing\Contracts\CallableDispatcher;
 use Illuminate\Routing\Contracts\ControllerDispatcher as ControllerDispatcherContract;
 use Illuminate\Routing\Matching\HostValidator;
 use Illuminate\Routing\Matching\MethodValidator;
@@ -17,6 +16,7 @@ use Illuminate\Support\Str;
 use Illuminate\Support\Traits\Macroable;
 use Laravel\SerializableClosure\SerializableClosure;
 use LogicException;
+use ReflectionFunction;
 use Symfony\Component\Routing\Route as SymfonyRoute;
 
 class Route
@@ -233,7 +233,9 @@ class Route
             $callable = unserialize($this->action['uses'])->getClosure();
         }
 
-        return $this->container[CallableDispatcher::class]->dispatch($this, $callable);
+        return $callable(...array_values($this->resolveMethodDependencies(
+            $this->parametersWithoutNulls(), new ReflectionFunction($callable)
+        )));
     }
 
     /**
@@ -304,16 +306,6 @@ class Route
     protected function parseControllerCallback()
     {
         return Str::parseCallback($this->action['uses']);
-    }
-
-    /**
-     * Flush the cached container instance on the route.
-     *
-     * @return void
-     */
-    public function flushController()
-    {
-        $this->controller = null;
     }
 
     /**
@@ -487,7 +479,9 @@ class Route
      */
     public function parametersWithoutNulls()
     {
-        return array_filter($this->parameters(), fn ($p) => ! is_null($p));
+        return array_filter($this->parameters(), function ($p) {
+            return ! is_null($p);
+        });
     }
 
     /**
@@ -513,7 +507,9 @@ class Route
     {
         preg_match_all('/\{(.*?)\}/', $this->getDomain().$this->uri, $matches);
 
-        return array_map(fn ($m) => trim($m, '?'), $matches[1]);
+        return array_map(function ($m) {
+            return trim($m, '?');
+        }, $matches[1]);
     }
 
     /**
@@ -539,9 +535,17 @@ class Route
      */
     public function bindingFieldFor($parameter)
     {
-        $fields = is_int($parameter) ? array_values($this->bindingFields) : $this->bindingFields;
+        if (is_int($parameter)) {
+            $parameters = $this->parameterNames();
 
-        return $fields[$parameter] ?? null;
+            if (! isset($parameters[$parameter])) {
+                return null;
+            }
+
+            $parameter = $parameters[$parameter];
+        }
+
+        return $this->bindingFields[$parameter] ?? null;
     }
 
     /**

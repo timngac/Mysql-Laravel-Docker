@@ -1,0 +1,4 @@
+#carouselIndicators .carousel-inner .carousel-item img {
+    width: 100%;
+    height: calc(100vh - 1rem);
+}
